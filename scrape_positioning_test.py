@@ -162,12 +162,84 @@ def extract_search_params_from_url(url):
     params = {
         "place_id": qs.get("place_id", [None])[0],
         "query": qs.get("query", [None])[0],
+        "ne_lat": qs.get("ne_lat", [None])[0],
+        "ne_lng": qs.get("ne_lng", [None])[0],
+        "sw_lat": qs.get("sw_lat", [None])[0],
+        "sw_lng": qs.get("sw_lng", [None])[0],
+        "zoom": qs.get("zoom", qs.get("zoom_level", [None]))[0],
     }
     
     if params["query"]:
         params["query"] = unquote(params["query"])
     
     return params
+
+
+# ==============================================================================
+# COORDONNÉES PRÉDÉFINIES POUR LES ZONES CONNUES
+# ==============================================================================
+KNOWN_ZONES = {
+    # Downtown Dubai (centre-ville)
+    "ChIJg_kMcC9oXz4RBLnAdrBYzLU": {
+        "name": "Downtown Dubai",
+        "ne_lat": 25.2100,
+        "ne_lng": 55.2850,
+        "sw_lat": 25.1850,
+        "sw_lng": 55.2600,
+        "zoom": 14,
+    },
+    # Dubai Marina
+    "ChIJHeMYJBZDXz4RsM0yP2BjzKU": {
+        "name": "Dubai Marina",
+        "ne_lat": 25.0950,
+        "ne_lng": 55.1550,
+        "sw_lat": 25.0700,
+        "sw_lng": 55.1250,
+        "zoom": 14,
+    },
+    # Palm Jumeirah
+    "ChIJDR_hQi5FXz4RCoge8pIJ5xE": {
+        "name": "Palm Jumeirah",
+        "ne_lat": 25.1400,
+        "ne_lng": 55.1500,
+        "sw_lat": 25.1000,
+        "sw_lng": 55.1050,
+        "zoom": 13,
+    },
+    # Business Bay
+    "ChIJx3bKhCNoXz4R51CQHxyDJDE": {
+        "name": "Business Bay",
+        "ne_lat": 25.1950,
+        "ne_lng": 55.2750,
+        "sw_lat": 25.1750,
+        "sw_lng": 55.2550,
+        "zoom": 14,
+    },
+}
+
+
+def get_coordinates_for_place(place_id, url_params):
+    """
+    Retourne les coordonnées pour un placeId.
+    Priorité: 1) URL params, 2) Zones connues, 3) None
+    """
+    # 1. Si l'URL contient déjà des coordonnées, les utiliser
+    if all([url_params.get("ne_lat"), url_params.get("ne_lng"), 
+            url_params.get("sw_lat"), url_params.get("sw_lng")]):
+        return {
+            "ne_lat": float(url_params["ne_lat"]),
+            "ne_lng": float(url_params["ne_lng"]),
+            "sw_lat": float(url_params["sw_lat"]),
+            "sw_lng": float(url_params["sw_lng"]),
+            "zoom": int(url_params.get("zoom") or 14),
+        }
+    
+    # 2. Chercher dans les zones connues
+    if place_id and place_id in KNOWN_ZONES:
+        return KNOWN_ZONES[place_id]
+    
+    # 3. Pas de coordonnées disponibles
+    return None
 
 
 # ==============================================================================
@@ -184,11 +256,12 @@ def fetch_stays_search_hash(proxy_url=""):
 
 
 # ==============================================================================
-# RECHERCHE AIRBNB (avec placeId) - VERSION DEBUG
+# RECHERCHE AIRBNB (avec coordonnées) - VERSION DEBUG
 # ==============================================================================
-def search_airbnb(api_key, place_id, query, check_in, check_out, proxy_url="", operation_hash=None):
+def search_airbnb(api_key, coords, query, check_in, check_out, proxy_url="", operation_hash=None):
     """
-    Effectue une recherche Airbnb en utilisant le placeId.
+    Effectue une recherche Airbnb en utilisant des coordonnées.
+    coords = {"ne_lat", "ne_lng", "sw_lat", "sw_lng", "zoom"}
     """
     
     # Utiliser le hash fourni ou le hash par défaut
@@ -209,15 +282,20 @@ def search_airbnb(api_key, place_id, query, check_in, check_out, proxy_url="", o
         {"filterName": "datePickerType", "filterValues": ["calendar"]},
         {"filterName": "flexibleTripLengths", "filterValues": ["one_week"]},
         {"filterName": "itemsPerGrid", "filterValues": ["50"]},
-        {"filterName": "placeId", "filterValues": [place_id]},
-        {"filterName": "query", "filterValues": [query or ""]},
+        {"filterName": "monthlyLength", "filterValues": ["3"]},
+        {"filterName": "neLat", "filterValues": [str(coords["ne_lat"])]},
+        {"filterName": "neLng", "filterValues": [str(coords["ne_lng"])]},
         {"filterName": "priceFilterInputType", "filterValues": ["0"]},
         {"filterName": "priceFilterNumNights", "filterValues": [str(nights)]},
+        {"filterName": "query", "filterValues": [query or ""]},
         {"filterName": "refinementPaths", "filterValues": ["/homes"]},
         {"filterName": "screenSize", "filterValues": ["large"]},
-        {"filterName": "searchByMap", "filterValues": ["false"]},
+        {"filterName": "searchByMap", "filterValues": ["true"]},
+        {"filterName": "swLat", "filterValues": [str(coords["sw_lat"])]},
+        {"filterName": "swLng", "filterValues": [str(coords["sw_lng"])]},
         {"filterName": "tabId", "filterValues": ["home_tab"]},
         {"filterName": "version", "filterValues": ["1.8.3"]},
+        {"filterName": "zoomLevel", "filterValues": [str(coords.get("zoom", 14))]},
     ]
     
     input_data = {
@@ -235,7 +313,7 @@ def search_airbnb(api_key, place_id, query, check_in, check_out, proxy_url="", o
                 "requestedPageType": "STAYS_SEARCH",
                 "metadataOnly": False,
                 "source": "structured_search_input_header",
-                "searchType": "filter_change",
+                "searchType": "user_map_move",
                 "treatmentFlags": TREATMENT_FLAGS,
                 "rawParams": raw_params,
             },
@@ -244,7 +322,7 @@ def search_airbnb(api_key, place_id, query, check_in, check_out, proxy_url="", o
                 "requestedPageType": "STAYS_SEARCH",
                 "metadataOnly": False,
                 "source": "structured_search_input_header",
-                "searchType": "filter_change",
+                "searchType": "user_map_move",
                 "treatmentFlags": TREATMENT_FLAGS,
                 "rawParams": raw_params,
             },
@@ -422,14 +500,23 @@ def main():
     place_id = url_params.get("place_id")
     query = url_params.get("query", "")
     
-    if not place_id:
-        print("❌ ERREUR: place_id non trouvé dans l'URL!")
-        print(f"   URL analysée: {search_url[:100]}...")
-        print("   Paramètres trouvés:", url_params)
+    print(f"   place_id: {place_id or '(non trouvé)'}")
+    print(f"   query: {query or '(non trouvé)'}")
+    
+    # Obtenir les coordonnées
+    coords = get_coordinates_for_place(place_id, url_params)
+    
+    if not coords:
+        print("❌ ERREUR: Impossible de déterminer les coordonnées!")
+        print("   → Ajoutez ne_lat, ne_lng, sw_lat, sw_lng dans l'URL")
+        print("   → Ou utilisez un place_id connu (Downtown Dubai, Marina, Palm...)")
+        print(f"\n   Place IDs connus:")
+        for pid, info in KNOWN_ZONES.items():
+            print(f"      • {info['name']}: {pid}")
         return
     
-    print(f"   ✅ place_id: {place_id}")
-    print(f"   ✅ query: {query}")
+    print(f"   ✅ Coordonnées: NE({coords['ne_lat']}, {coords['ne_lng']}) SW({coords['sw_lat']}, {coords['sw_lng']})")
+    print(f"   ✅ Zoom: {coords.get('zoom', 14)}")
     
     # API Key
     print("\n📦 Récupération API Key...", end=" ", flush=True)
@@ -506,7 +593,7 @@ def main():
         try:
             listings = search_airbnb(
                 api_key=api_key,
-                place_id=place_id,
+                coords=coords,
                 query=query,
                 check_in=checkin,
                 check_out=checkout,
