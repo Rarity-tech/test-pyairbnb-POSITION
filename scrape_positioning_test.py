@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
 =============================================================================
-SCRAPE POSITIONING TEST - Version corrigée v2 (avec debug)
+SCRAPE POSITIONING TEST - Version v3
+=============================================================================
+Utilise pyairbnb.search_all() directement (qui fonctionne)
 =============================================================================
 """
 
 import os
-import re
-import json
 import time
 from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs, unquote
 from collections import defaultdict
 
-from curl_cffi import requests
+import pyairbnb
 
 # ==============================================================================
 # CONFIG
@@ -28,54 +28,53 @@ MONTHS_TO_CHECK = int(os.environ.get("MONTHS_TO_CHECK", "3"))
 DELAY_BETWEEN_SEARCHES = float(os.environ.get("DELAY_BETWEEN_SEARCHES", "1.5"))
 DEBUG = os.environ.get("DEBUG", "0") == "1"
 
-# Headers Chrome
-HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en",
-    "Cache-Control": "no-cache",
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# ==============================================================================
+# COORDONNÉES PRÉDÉFINIES POUR LES ZONES CONNUES
+# ==============================================================================
+KNOWN_ZONES = {
+    # Downtown Dubai (centre-ville)
+    "ChIJg_kMcC9oXz4RBLnAdrBYzLU": {
+        "name": "Downtown Dubai",
+        "ne_lat": 25.2100,
+        "ne_lng": 55.2850,
+        "sw_lat": 25.1850,
+        "sw_lng": 55.2600,
+        "zoom": 14,
+    },
+    # Dubai Marina
+    "ChIJHeMYJBZDXz4RsM0yP2BjzKU": {
+        "name": "Dubai Marina",
+        "ne_lat": 25.0950,
+        "ne_lng": 55.1550,
+        "sw_lat": 25.0700,
+        "sw_lng": 55.1250,
+        "zoom": 14,
+    },
+    # Palm Jumeirah
+    "ChIJDR_hQi5FXz4RCoge8pIJ5xE": {
+        "name": "Palm Jumeirah",
+        "ne_lat": 25.1400,
+        "ne_lng": 55.1500,
+        "sw_lat": 25.1000,
+        "sw_lng": 55.1050,
+        "zoom": 13,
+    },
+    # Business Bay
+    "ChIJx3bKhCNoXz4R51CQHxyDJDE": {
+        "name": "Business Bay",
+        "ne_lat": 25.1950,
+        "ne_lng": 55.2750,
+        "sw_lat": 25.1750,
+        "sw_lng": 55.2550,
+        "zoom": 14,
+    },
 }
-
-TREATMENT_FLAGS = [
-    "feed_map_decouple_m11_treatment",
-    "stays_search_rehydration_treatment_desktop",
-    "stays_search_rehydration_treatment_moweb",
-]
-
-
-# ==============================================================================
-# API KEY
-# ==============================================================================
-def get_api_key(proxy_url=""):
-    """Récupère la clé API depuis la page Airbnb"""
-    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-    
-    response = requests.get(
-        "https://www.airbnb.com/",
-        headers=HEADERS,
-        proxies=proxies,
-        impersonate="chrome124",
-        timeout=30
-    )
-    response.raise_for_status()
-    
-    match = re.search(r'"key":"([^"]+)"', response.text)
-    if match:
-        return match.group(1)
-    
-    raise Exception("API Key non trouvée")
 
 
 # ==============================================================================
 # CALENDAR
 # ==============================================================================
-def get_calendar(api_key, room_id, proxy_url=""):
-    """Récupère le calendrier d'un listing"""
-    import pyairbnb
-    return pyairbnb.get_calendar(api_key=api_key, room_id=str(room_id), proxy_url=proxy_url)
-
-
 def get_available_days(calendar_data):
     """Extrait les jours disponibles du calendrier"""
     available_days = {}
@@ -175,54 +174,8 @@ def extract_search_params_from_url(url):
     return params
 
 
-# ==============================================================================
-# COORDONNÉES PRÉDÉFINIES POUR LES ZONES CONNUES
-# ==============================================================================
-KNOWN_ZONES = {
-    # Downtown Dubai (centre-ville)
-    "ChIJg_kMcC9oXz4RBLnAdrBYzLU": {
-        "name": "Downtown Dubai",
-        "ne_lat": 25.2100,
-        "ne_lng": 55.2850,
-        "sw_lat": 25.1850,
-        "sw_lng": 55.2600,
-        "zoom": 14,
-    },
-    # Dubai Marina
-    "ChIJHeMYJBZDXz4RsM0yP2BjzKU": {
-        "name": "Dubai Marina",
-        "ne_lat": 25.0950,
-        "ne_lng": 55.1550,
-        "sw_lat": 25.0700,
-        "sw_lng": 55.1250,
-        "zoom": 14,
-    },
-    # Palm Jumeirah
-    "ChIJDR_hQi5FXz4RCoge8pIJ5xE": {
-        "name": "Palm Jumeirah",
-        "ne_lat": 25.1400,
-        "ne_lng": 55.1500,
-        "sw_lat": 25.1000,
-        "sw_lng": 55.1050,
-        "zoom": 13,
-    },
-    # Business Bay
-    "ChIJx3bKhCNoXz4R51CQHxyDJDE": {
-        "name": "Business Bay",
-        "ne_lat": 25.1950,
-        "ne_lng": 55.2750,
-        "sw_lat": 25.1750,
-        "sw_lng": 55.2550,
-        "zoom": 14,
-    },
-}
-
-
 def get_coordinates_for_place(place_id, url_params):
-    """
-    Retourne les coordonnées pour un placeId.
-    Priorité: 1) URL params, 2) Zones connues, 3) None
-    """
+    """Retourne les coordonnées pour un placeId."""
     # 1. Si l'URL contient déjà des coordonnées, les utiliser
     if all([url_params.get("ne_lat"), url_params.get("ne_lng"), 
             url_params.get("sw_lat"), url_params.get("sw_lng")]):
@@ -238,207 +191,56 @@ def get_coordinates_for_place(place_id, url_params):
     if place_id and place_id in KNOWN_ZONES:
         return KNOWN_ZONES[place_id]
     
-    # 3. Pas de coordonnées disponibles
     return None
 
 
 # ==============================================================================
-# HASH DYNAMIQUE
+# RECHERCHE - Utilise pyairbnb.search_all directement
 # ==============================================================================
-def fetch_stays_search_hash(proxy_url=""):
-    """Récupère le hash dynamique de l'API StaysSearch"""
-    try:
-        import pyairbnb
-        return pyairbnb.fetch_stays_search_hash(proxy_url)
-    except Exception as e:
-        print(f"   ⚠️ Impossible de récupérer hash dynamique: {e}")
-        return None
-
-
-# ==============================================================================
-# RECHERCHE AIRBNB (avec coordonnées) - VERSION DEBUG
-# ==============================================================================
-def search_airbnb(api_key, coords, query, check_in, check_out, proxy_url="", operation_hash=None):
+def search_airbnb(coords, check_in, check_out):
     """
-    Effectue une recherche Airbnb en utilisant des coordonnées.
-    coords = {"ne_lat", "ne_lng", "sw_lat", "sw_lng", "zoom"}
+    Effectue une recherche Airbnb en utilisant pyairbnb.search_all.
+    Retourne liste de {"id": ..., "name": ...}
     """
-    
-    # Utiliser le hash fourni ou le hash par défaut
-    operation_id = operation_hash or '9f945886dcc032b9ef4ba770d9132eb0aa78053296b5405483944c229617b00b'
-    base_url = f"https://www.airbnb.com/api/v3/StaysSearch/{operation_id}"
-    url = f"{base_url}?operationName=StaysSearch&locale={LANGUAGE}&currency={CURRENCY}"
+    print(f"   📡 Recherche pyairbnb...", end=" ", flush=True)
     
     try:
-        nights = (datetime.strptime(check_out, "%Y-%m-%d") - datetime.strptime(check_in, "%Y-%m-%d")).days
-    except:
-        nights = 1
-    
-    raw_params = [
-        {"filterName": "cdnCacheSafe", "filterValues": ["false"]},
-        {"filterName": "channel", "filterValues": ["EXPLORE"]},
-        {"filterName": "checkin", "filterValues": [check_in]},
-        {"filterName": "checkout", "filterValues": [check_out]},
-        {"filterName": "datePickerType", "filterValues": ["calendar"]},
-        {"filterName": "flexibleTripLengths", "filterValues": ["one_week"]},
-        {"filterName": "itemsPerGrid", "filterValues": ["50"]},
-        {"filterName": "monthlyLength", "filterValues": ["3"]},
-        {"filterName": "neLat", "filterValues": [str(coords["ne_lat"])]},
-        {"filterName": "neLng", "filterValues": [str(coords["ne_lng"])]},
-        {"filterName": "priceFilterInputType", "filterValues": ["0"]},
-        {"filterName": "priceFilterNumNights", "filterValues": [str(nights)]},
-        {"filterName": "query", "filterValues": [query or ""]},
-        {"filterName": "refinementPaths", "filterValues": ["/homes"]},
-        {"filterName": "screenSize", "filterValues": ["large"]},
-        {"filterName": "searchByMap", "filterValues": ["true"]},
-        {"filterName": "swLat", "filterValues": [str(coords["sw_lat"])]},
-        {"filterName": "swLng", "filterValues": [str(coords["sw_lng"])]},
-        {"filterName": "tabId", "filterValues": ["home_tab"]},
-        {"filterName": "version", "filterValues": ["1.8.3"]},
-        {"filterName": "zoomLevel", "filterValues": [str(coords.get("zoom", 14))]},
-    ]
-    
-    input_data = {
-        "operationName": "StaysSearch",
-        "extensions": {
-            "persistedQuery": {
-                "version": 1,
-                "sha256Hash": operation_id,
-            },
-        },
-        "variables": {
-            "staysSearchRequest": {
-                "cursor": "",
-                "maxMapItems": 9999,
-                "requestedPageType": "STAYS_SEARCH",
-                "metadataOnly": False,
-                "source": "structured_search_input_header",
-                "searchType": "user_map_move",
-                "treatmentFlags": TREATMENT_FLAGS,
-                "rawParams": raw_params,
-            },
-            "staysMapSearchRequestV2": {
-                "cursor": "",
-                "requestedPageType": "STAYS_SEARCH",
-                "metadataOnly": False,
-                "source": "structured_search_input_header",
-                "searchType": "user_map_move",
-                "treatmentFlags": TREATMENT_FLAGS,
-                "rawParams": raw_params,
-            },
-            "includeMapResults": True,
-            "isLeanTreatment": False,
-        },
-    }
-    
-    headers = HEADERS.copy()
-    headers["X-Airbnb-Api-Key"] = api_key
-    
-    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-    
-    print(f"   📡 Envoi requête API...", end=" ", flush=True)
-    
-    response = requests.post(
-        url,
-        json=input_data,
-        headers=headers,
-        proxies=proxies,
-        impersonate="chrome124",
-        timeout=60
-    )
-    
-    print(f"Status: {response.status_code}")
-    
-    if response.status_code != 200:
-        print(f"   ❌ Erreur HTTP {response.status_code}")
-        print(f"   📄 Réponse: {response.text[:500]}")
-        return []
-    
-    # Parser la réponse JSON
-    try:
-        data = response.json()
-    except Exception as e:
-        print(f"   ❌ Erreur JSON: {e}")
-        print(f"   📄 Réponse brute: {response.text[:500]}")
-        return []
-    
-    # Debug: afficher la structure
-    if DEBUG:
-        print(f"   🔍 Clés niveau 1: {list(data.keys()) if data else 'None'}")
-        if data and "data" in data:
-            print(f"   🔍 Clés data: {list(data['data'].keys()) if data['data'] else 'None'}")
-    
-    # Vérifier les erreurs dans la réponse
-    if data and "errors" in data:
-        print(f"   ❌ Erreurs API: {data['errors']}")
-        return []
-    
-    # Extraire les listings
-    all_listings = []
-    
-    try:
-        # Chemin principal
-        search_results = (data
-                        .get("data", {})
-                        .get("presentation", {})
-                        .get("staysSearch", {})
-                        .get("results", {})
-                        .get("searchResults", []))
+        results = pyairbnb.search_all(
+            check_in=check_in,
+            check_out=check_out,
+            ne_lat=coords["ne_lat"],
+            ne_long=coords["ne_lng"],
+            sw_lat=coords["sw_lat"],
+            sw_long=coords["sw_lng"],
+            zoom_value=coords.get("zoom", 14),
+            currency=CURRENCY,
+            proxy_url=PROXY_URL,
+        )
         
-        if DEBUG:
-            print(f"   🔍 searchResults count: {len(search_results) if search_results else 0}")
+        print(f"OK ({len(results or [])} résultats bruts)")
         
-        if not search_results:
-            # Essayer un autre chemin
-            stays_search = data.get("data", {}).get("presentation", {}).get("staysSearch", {})
-            if DEBUG:
-                print(f"   🔍 staysSearch keys: {list(stays_search.keys()) if stays_search else 'None'}")
-        
-        for item in (search_results or []):
-            listing = item.get("listing", {})
-            listing_id = listing.get("id", "")
-            
-            if isinstance(listing_id, str) and "StayListing:" in listing_id:
-                listing_id = listing_id.replace("StayListing:", "")
-            
-            if listing_id:
-                all_listings.append({
-                    "id": str(listing_id),
-                    "name": listing.get("name", "")[:50],
+        # Convertir au format attendu
+        listings = []
+        for item in (results or []):
+            room_id = item.get("room_id")
+            if room_id:
+                listings.append({
+                    "id": str(room_id),
+                    "name": item.get("name", "")[:50],
                 })
         
-        # Si toujours vide, essayer mapResults
-        if not all_listings:
-            map_results = (data
-                         .get("data", {})
-                         .get("presentation", {})
-                         .get("staysSearch", {})
-                         .get("mapResults", {})
-                         .get("mapSearchResults", []))
-            
-            if DEBUG:
-                print(f"   🔍 mapResults count: {len(map_results) if map_results else 0}")
-            
-            for item in (map_results or []):
-                listing = item.get("listing", {}) if isinstance(item, dict) else {}
-                listing_id = listing.get("id", "")
-                
-                if isinstance(listing_id, str) and "StayListing:" in listing_id:
-                    listing_id = listing_id.replace("StayListing:", "")
-                
-                if listing_id:
-                    all_listings.append({
-                        "id": str(listing_id),
-                        "name": listing.get("name", "")[:50],
-                    })
+        if DEBUG and results and len(results) > 0:
+            print(f"   🔍 Premier résultat: room_id={results[0].get('room_id')}")
+            print(f"   🔍 Clés disponibles: {list(results[0].keys())}")
+        
+        return listings
     
     except Exception as e:
-        print(f"   ❌ Erreur extraction: {e}")
+        print(f"Erreur: {e}")
         if DEBUG:
             import traceback
             traceback.print_exc()
-    
-    return all_listings
+        return []
 
 
 # ==============================================================================
@@ -478,7 +280,7 @@ def read_input(env_key, prompt, required=True):
 # ==============================================================================
 def main():
     print("=" * 80)
-    print("🚀 TEST POSITIONNEMENT — Version corrigée v2")
+    print("🚀 TEST POSITIONNEMENT — Version v3 (pyairbnb.search_all)")
     print("=" * 80)
     print(f"📅 Run: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"💰 Devise: {CURRENCY} | 🌐 Langue: {LANGUAGE}")
@@ -509,27 +311,18 @@ def main():
     if not coords:
         print("❌ ERREUR: Impossible de déterminer les coordonnées!")
         print("   → Ajoutez ne_lat, ne_lng, sw_lat, sw_lng dans l'URL")
-        print("   → Ou utilisez un place_id connu (Downtown Dubai, Marina, Palm...)")
-        print(f"\n   Place IDs connus:")
+        print("   → Ou utilisez un place_id connu:")
         for pid, info in KNOWN_ZONES.items():
             print(f"      • {info['name']}: {pid}")
         return
     
+    print(f"   ✅ Zone: {KNOWN_ZONES.get(place_id, {}).get('name', 'Custom')}")
     print(f"   ✅ Coordonnées: NE({coords['ne_lat']}, {coords['ne_lng']}) SW({coords['sw_lat']}, {coords['sw_lng']})")
-    print(f"   ✅ Zoom: {coords.get('zoom', 14)}")
     
-    # API Key
+    # Récupérer API Key pour le calendrier
     print("\n📦 Récupération API Key...", end=" ", flush=True)
-    api_key = get_api_key(PROXY_URL)
-    print(f"OK ({api_key[:20]}...)")
-    
-    # Hash dynamique
-    print("📦 Récupération hash API...", end=" ", flush=True)
-    operation_hash = fetch_stays_search_hash(PROXY_URL)
-    if operation_hash:
-        print(f"OK ({operation_hash[:20]}...)")
-    else:
-        print("⚠️ Utilisation hash par défaut")
+    api_key = pyairbnb.get_api_key(PROXY_URL)
+    print(f"OK")
     
     # Construire la liste de tests
     tests = []
@@ -537,7 +330,7 @@ def main():
     if date_input == "0":
         print("\n📅 Mode auto-calendrier")
         print("📅 Récupération calendrier...", end=" ", flush=True)
-        calendar_data = get_calendar(api_key, room_id, PROXY_URL)
+        calendar_data = pyairbnb.get_calendar(api_key=api_key, room_id=str(room_id), proxy_url=PROXY_URL)
         print("OK")
         
         availability = get_available_days(calendar_data)
@@ -592,16 +385,12 @@ def main():
         
         try:
             listings = search_airbnb(
-                api_key=api_key,
                 coords=coords,
-                query=query,
                 check_in=checkin,
                 check_out=checkout,
-                proxy_url=PROXY_URL,
-                operation_hash=operation_hash,
             )
             
-            print(f"   📦 Résultats: {len(listings)} listings")
+            print(f"   📦 Listings uniques: {len(listings)}")
             
             if not listings:
                 print(f"   ⚠️ Aucun listing retourné")
@@ -641,8 +430,9 @@ def main():
         
         except Exception as e:
             print(f"   ❌ Erreur: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            if DEBUG:
+                import traceback
+                traceback.print_exc()
             results.append({
                 "date": checkin,
                 "found": False,
