@@ -1,0 +1,70 @@
+name: Test Positioning (logs only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      room_id:
+        description: 'RoomID (listing id)'
+        required: true
+        type: string
+      search_url:
+        description: 'URL de recherche Airbnb'
+        required: true
+        type: string
+      date_input:
+        description: '0 = auto-calendrier, sinon YYYY-MM-DD'
+        required: true
+        type: string
+        default: '0'
+      checkout:
+        description: 'Checkout (YYYY-MM-DD) si date_input != 0'
+        required: false
+        type: string
+        default: ''
+      max_days:
+        description: 'MAX_DAYS si auto-calendrier (0 = toutes dates dispo)'
+        required: false
+        type: number
+        default: 0
+      results_per_page:
+        description: 'Résultats par page (pour calcul page/position)'
+        required: false
+        type: number
+        default: 18
+      currency:
+        description: 'Devise (USD, AED, EUR...)'
+        required: false
+        type: string
+        default: 'AED'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run positioning test (logs only)
+        env:
+          ROOM_ID: ${{ inputs.room_id }}
+          SEARCH_URL: ${{ inputs.search_url }}
+          DATE_INPUT: ${{ inputs.date_input }}
+          CHECKOUT: ${{ inputs.checkout }}
+          MAX_DAYS: ${{ inputs.max_days }}
+          RESULTS_PER_PAGE: ${{ inputs.results_per_page }}
+          CURRENCY: ${{ inputs.currency }}
+        run: |
+          python scrape_positioning_test.py
