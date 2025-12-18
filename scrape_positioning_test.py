@@ -213,6 +213,8 @@ def search_airbnb(coords, check_in, check_out):
             sw_lat=coords["sw_lat"],
             sw_long=coords["sw_lng"],
             zoom_value=coords.get("zoom", 14),
+            price_min=0,
+            price_max=0,
             currency=CURRENCY,
             proxy_url=PROXY_URL,
         )
