@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
 =============================================================================
-SCRAPE POSITIONING TEST - Version corrigée
-=============================================================================
-- Utilise le placeId extrait de l'URL (au lieu de coordonnées)
-- Prend 3 dates disponibles par mois pour les 3 prochains mois
+SCRAPE POSITIONING TEST - Version corrigée v2 (avec debug)
 =============================================================================
 """
 
@@ -25,10 +22,11 @@ CURRENCY = os.environ.get("CURRENCY", "AED")
 LANGUAGE = os.environ.get("LANGUAGE", "en")
 PROXY_URL = os.environ.get("PROXY_URL", "")
 RESULTS_PER_PAGE = int(os.environ.get("RESULTS_PER_PAGE", "18"))
-MAX_DAYS = int(os.environ.get("MAX_DAYS", "0"))  # 0 = utiliser la logique 3 dates x 3 mois
+MAX_DAYS = int(os.environ.get("MAX_DAYS", "0"))
 DATES_PER_MONTH = int(os.environ.get("DATES_PER_MONTH", "3"))
 MONTHS_TO_CHECK = int(os.environ.get("MONTHS_TO_CHECK", "3"))
 DELAY_BETWEEN_SEARCHES = float(os.environ.get("DELAY_BETWEEN_SEARCHES", "1.5"))
+DEBUG = os.environ.get("DEBUG", "0") == "1"
 
 # Headers Chrome
 HEADERS = {
@@ -70,7 +68,7 @@ def get_api_key(proxy_url=""):
 
 
 # ==============================================================================
-# CALENDAR (réutilise pyairbnb)
+# CALENDAR
 # ==============================================================================
 def get_calendar(api_key, room_id, proxy_url=""):
     """Récupère le calendrier d'un listing"""
@@ -103,22 +101,11 @@ def get_available_days(calendar_data):
 
 
 def select_dates_per_month(availability, dates_per_month=3, months_to_check=3):
-    """
-    Sélectionne X dates disponibles pour chacun des Y prochains mois.
-    
-    Args:
-        availability: dict {date_str: {available, min_nights, max_nights}}
-        dates_per_month: nombre de dates à prendre par mois
-        months_to_check: nombre de mois à vérifier
-    
-    Returns:
-        list of (check_in, check_out, min_nights)
-    """
+    """Sélectionne X dates disponibles pour chacun des Y prochains mois."""
     today = datetime.now().date()
     current_month = today.month
     current_year = today.year
     
-    # Organiser les dates disponibles par mois
     dates_by_month = defaultdict(list)
     
     for date_str, info in availability.items():
@@ -130,14 +117,12 @@ def select_dates_per_month(availability, dates_per_month=3, months_to_check=3):
         except:
             continue
         
-        # Ignorer les dates passées
         if date_obj <= today:
             continue
         
         month_key = (date_obj.year, date_obj.month)
         dates_by_month[month_key].append((date_str, info))
     
-    # Déterminer les 3 prochains mois
     target_months = []
     month = current_month
     year = current_year
@@ -149,16 +134,12 @@ def select_dates_per_month(availability, dates_per_month=3, months_to_check=3):
             year += 1
         target_months.append((year, month))
     
-    # Sélectionner X dates par mois
     selected_tests = []
     
     for month_key in target_months:
         month_dates = dates_by_month.get(month_key, [])
-        
-        # Trier par date
         month_dates.sort(key=lambda x: x[0])
         
-        # Prendre les X premières dates disponibles
         for date_str, info in month_dates[:dates_per_month]:
             min_nights = info.get("min_nights", 1)
             check_in_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -174,25 +155,15 @@ def select_dates_per_month(availability, dates_per_month=3, months_to_check=3):
 # URL PARSING
 # ==============================================================================
 def extract_search_params_from_url(url):
-    """
-    Extrait les paramètres de recherche depuis une URL Airbnb.
-    Retourne: dict avec placeId, query, etc.
-    """
+    """Extrait les paramètres de recherche depuis une URL Airbnb."""
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     
     params = {
         "place_id": qs.get("place_id", [None])[0],
         "query": qs.get("query", [None])[0],
-        "checkin": qs.get("checkin", [None])[0],
-        "checkout": qs.get("checkout", [None])[0],
-        "ne_lat": qs.get("ne_lat", [None])[0],
-        "ne_lng": qs.get("ne_lng", [None])[0],
-        "sw_lat": qs.get("sw_lat", [None])[0],
-        "sw_lng": qs.get("sw_lng", [None])[0],
     }
     
-    # Décoder le query si présent
     if params["query"]:
         params["query"] = unquote(params["query"])
     
@@ -200,15 +171,28 @@ def extract_search_params_from_url(url):
 
 
 # ==============================================================================
-# RECHERCHE AIRBNB (avec placeId)
+# HASH DYNAMIQUE
 # ==============================================================================
-def search_airbnb(api_key, place_id, query, check_in, check_out, cursor="", proxy_url=""):
+def fetch_stays_search_hash(proxy_url=""):
+    """Récupère le hash dynamique de l'API StaysSearch"""
+    try:
+        import pyairbnb
+        return pyairbnb.fetch_stays_search_hash(proxy_url)
+    except Exception as e:
+        print(f"   ⚠️ Impossible de récupérer hash dynamique: {e}")
+        return None
+
+
+# ==============================================================================
+# RECHERCHE AIRBNB (avec placeId) - VERSION DEBUG
+# ==============================================================================
+def search_airbnb(api_key, place_id, query, check_in, check_out, proxy_url="", operation_hash=None):
     """
     Effectue une recherche Airbnb en utilisant le placeId.
-    Retourne tous les résultats (pagination automatique).
     """
     
-    operation_id = '9f945886dcc032b9ef4ba770d9132eb0aa78053296b5405483944c229617b00b'
+    # Utiliser le hash fourni ou le hash par défaut
+    operation_id = operation_hash or '9f945886dcc032b9ef4ba770d9132eb0aa78053296b5405483944c229617b00b'
     base_url = f"https://www.airbnb.com/api/v3/StaysSearch/{operation_id}"
     url = f"{base_url}?operationName=StaysSearch&locale={LANGUAGE}&currency={CURRENCY}"
     
@@ -217,94 +201,122 @@ def search_airbnb(api_key, place_id, query, check_in, check_out, cursor="", prox
     except:
         nights = 1
     
-    all_listings = []
-    page_cursor = cursor
-    page_count = 0
-    max_pages = 20  # Sécurité
+    raw_params = [
+        {"filterName": "cdnCacheSafe", "filterValues": ["false"]},
+        {"filterName": "channel", "filterValues": ["EXPLORE"]},
+        {"filterName": "checkin", "filterValues": [check_in]},
+        {"filterName": "checkout", "filterValues": [check_out]},
+        {"filterName": "datePickerType", "filterValues": ["calendar"]},
+        {"filterName": "flexibleTripLengths", "filterValues": ["one_week"]},
+        {"filterName": "itemsPerGrid", "filterValues": ["50"]},
+        {"filterName": "placeId", "filterValues": [place_id]},
+        {"filterName": "query", "filterValues": [query or ""]},
+        {"filterName": "priceFilterInputType", "filterValues": ["0"]},
+        {"filterName": "priceFilterNumNights", "filterValues": [str(nights)]},
+        {"filterName": "refinementPaths", "filterValues": ["/homes"]},
+        {"filterName": "screenSize", "filterValues": ["large"]},
+        {"filterName": "searchByMap", "filterValues": ["false"]},
+        {"filterName": "tabId", "filterValues": ["home_tab"]},
+        {"filterName": "version", "filterValues": ["1.8.3"]},
+    ]
     
-    while page_count < max_pages:
-        page_count += 1
-        
-        raw_params = [
-            {"filterName": "cdnCacheSafe", "filterValues": ["false"]},
-            {"filterName": "channel", "filterValues": ["EXPLORE"]},
-            {"filterName": "checkin", "filterValues": [check_in]},
-            {"filterName": "checkout", "filterValues": [check_out]},
-            {"filterName": "datePickerType", "filterValues": ["calendar"]},
-            {"filterName": "flexibleTripLengths", "filterValues": ["one_week"]},
-            {"filterName": "itemsPerGrid", "filterValues": ["50"]},
-            {"filterName": "placeId", "filterValues": [place_id]},
-            {"filterName": "query", "filterValues": [query or ""]},
-            {"filterName": "priceFilterInputType", "filterValues": ["0"]},
-            {"filterName": "priceFilterNumNights", "filterValues": [str(nights)]},
-            {"filterName": "refinementPaths", "filterValues": ["/homes"]},
-            {"filterName": "screenSize", "filterValues": ["large"]},
-            {"filterName": "searchByMap", "filterValues": ["false"]},
-            {"filterName": "tabId", "filterValues": ["home_tab"]},
-            {"filterName": "version", "filterValues": ["1.8.3"]},
-        ]
-        
-        input_data = {
-            "operationName": "StaysSearch",
-            "extensions": {
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": operation_id,
-                },
+    input_data = {
+        "operationName": "StaysSearch",
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": operation_id,
             },
-            "variables": {
-                "staysSearchRequest": {
-                    "cursor": page_cursor,
-                    "maxMapItems": 9999,
-                    "requestedPageType": "STAYS_SEARCH",
-                    "metadataOnly": False,
-                    "source": "structured_search_input_header",
-                    "searchType": "filter_change",
-                    "treatmentFlags": TREATMENT_FLAGS,
-                    "rawParams": raw_params,
-                },
-                "staysMapSearchRequestV2": {
-                    "cursor": page_cursor,
-                    "requestedPageType": "STAYS_SEARCH",
-                    "metadataOnly": False,
-                    "source": "structured_search_input_header",
-                    "searchType": "filter_change",
-                    "treatmentFlags": TREATMENT_FLAGS,
-                    "rawParams": raw_params,
-                },
-                "includeMapResults": True,
-                "isLeanTreatment": False,
+        },
+        "variables": {
+            "staysSearchRequest": {
+                "cursor": "",
+                "maxMapItems": 9999,
+                "requestedPageType": "STAYS_SEARCH",
+                "metadataOnly": False,
+                "source": "structured_search_input_header",
+                "searchType": "filter_change",
+                "treatmentFlags": TREATMENT_FLAGS,
+                "rawParams": raw_params,
             },
-        }
-        
-        headers = HEADERS.copy()
-        headers["X-Airbnb-Api-Key"] = api_key
-        
-        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
-        
-        response = requests.post(
-            url,
-            json=input_data,
-            headers=headers,
-            proxies=proxies,
-            impersonate="chrome124",
-            timeout=60
-        )
-        
-        if response.status_code != 200:
-            print(f"      ⚠️ Erreur API: {response.status_code}")
-            break
-        
+            "staysMapSearchRequestV2": {
+                "cursor": "",
+                "requestedPageType": "STAYS_SEARCH",
+                "metadataOnly": False,
+                "source": "structured_search_input_header",
+                "searchType": "filter_change",
+                "treatmentFlags": TREATMENT_FLAGS,
+                "rawParams": raw_params,
+            },
+            "includeMapResults": True,
+            "isLeanTreatment": False,
+        },
+    }
+    
+    headers = HEADERS.copy()
+    headers["X-Airbnb-Api-Key"] = api_key
+    
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    
+    print(f"   📡 Envoi requête API...", end=" ", flush=True)
+    
+    response = requests.post(
+        url,
+        json=input_data,
+        headers=headers,
+        proxies=proxies,
+        impersonate="chrome124",
+        timeout=60
+    )
+    
+    print(f"Status: {response.status_code}")
+    
+    if response.status_code != 200:
+        print(f"   ❌ Erreur HTTP {response.status_code}")
+        print(f"   📄 Réponse: {response.text[:500]}")
+        return []
+    
+    # Parser la réponse JSON
+    try:
         data = response.json()
+    except Exception as e:
+        print(f"   ❌ Erreur JSON: {e}")
+        print(f"   📄 Réponse brute: {response.text[:500]}")
+        return []
+    
+    # Debug: afficher la structure
+    if DEBUG:
+        print(f"   🔍 Clés niveau 1: {list(data.keys()) if data else 'None'}")
+        if data and "data" in data:
+            print(f"   🔍 Clés data: {list(data['data'].keys()) if data['data'] else 'None'}")
+    
+    # Vérifier les erreurs dans la réponse
+    if data and "errors" in data:
+        print(f"   ❌ Erreurs API: {data['errors']}")
+        return []
+    
+    # Extraire les listings
+    all_listings = []
+    
+    try:
+        # Chemin principal
+        search_results = (data
+                        .get("data", {})
+                        .get("presentation", {})
+                        .get("staysSearch", {})
+                        .get("results", {})
+                        .get("searchResults", []))
         
-        # Extraire les listings de cette page
-        search_results = (data.get("data", {})
-                         .get("presentation", {})
-                         .get("staysSearch", {})
-                         .get("results", {})
-                         .get("searchResults", []))
+        if DEBUG:
+            print(f"   🔍 searchResults count: {len(search_results) if search_results else 0}")
         
-        for item in search_results:
+        if not search_results:
+            # Essayer un autre chemin
+            stays_search = data.get("data", {}).get("presentation", {}).get("staysSearch", {})
+            if DEBUG:
+                print(f"   🔍 staysSearch keys: {list(stays_search.keys()) if stays_search else 'None'}")
+        
+        for item in (search_results or []):
             listing = item.get("listing", {})
             listing_id = listing.get("id", "")
             
@@ -317,20 +329,36 @@ def search_airbnb(api_key, place_id, query, check_in, check_out, cursor="", prox
                     "name": listing.get("name", "")[:50],
                 })
         
-        # Vérifier pagination
-        pagination = (data.get("data", {})
-                     .get("presentation", {})
-                     .get("staysSearch", {})
-                     .get("results", {})
-                     .get("paginationInfo", {}))
-        
-        next_cursor = pagination.get("nextPageCursor")
-        
-        if not next_cursor or not search_results:
-            break
-        
-        page_cursor = next_cursor
-        time.sleep(0.5)  # Petit délai entre les pages
+        # Si toujours vide, essayer mapResults
+        if not all_listings:
+            map_results = (data
+                         .get("data", {})
+                         .get("presentation", {})
+                         .get("staysSearch", {})
+                         .get("mapResults", {})
+                         .get("mapSearchResults", []))
+            
+            if DEBUG:
+                print(f"   🔍 mapResults count: {len(map_results) if map_results else 0}")
+            
+            for item in (map_results or []):
+                listing = item.get("listing", {}) if isinstance(item, dict) else {}
+                listing_id = listing.get("id", "")
+                
+                if isinstance(listing_id, str) and "StayListing:" in listing_id:
+                    listing_id = listing_id.replace("StayListing:", "")
+                
+                if listing_id:
+                    all_listings.append({
+                        "id": str(listing_id),
+                        "name": listing.get("name", "")[:50],
+                    })
+    
+    except Exception as e:
+        print(f"   ❌ Erreur extraction: {e}")
+        if DEBUG:
+            import traceback
+            traceback.print_exc()
     
     return all_listings
 
@@ -372,11 +400,13 @@ def read_input(env_key, prompt, required=True):
 # ==============================================================================
 def main():
     print("=" * 80)
-    print("🚀 TEST POSITIONNEMENT — Version corrigée (placeId)")
+    print("🚀 TEST POSITIONNEMENT — Version corrigée v2")
     print("=" * 80)
     print(f"📅 Run: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"💰 Devise: {CURRENCY} | 🌐 Langue: {LANGUAGE}")
     print(f"📊 Config: {DATES_PER_MONTH} dates/mois × {MONTHS_TO_CHECK} mois")
+    if DEBUG:
+        print("🐛 MODE DEBUG ACTIVÉ")
     print("=" * 80)
     
     # Inputs
@@ -404,7 +434,15 @@ def main():
     # API Key
     print("\n📦 Récupération API Key...", end=" ", flush=True)
     api_key = get_api_key(PROXY_URL)
-    print("OK")
+    print(f"OK ({api_key[:20]}...)")
+    
+    # Hash dynamique
+    print("📦 Récupération hash API...", end=" ", flush=True)
+    operation_hash = fetch_stays_search_hash(PROXY_URL)
+    if operation_hash:
+        print(f"OK ({operation_hash[:20]}...)")
+    else:
+        print("⚠️ Utilisation hash par défaut")
     
     # Construire la liste de tests
     tests = []
@@ -423,9 +461,7 @@ def main():
             print("⚠️ Aucun jour disponible!")
             return
         
-        # Sélection: 3 dates par mois pour 3 mois
         if MAX_DAYS > 0:
-            # Mode legacy: prendre les X premières dates
             available_dates = [d for d, info in sorted(availability.items()) if info["available"]]
             available_dates = available_dates[:MAX_DAYS]
             for check_in in available_dates:
@@ -435,7 +471,6 @@ def main():
                 tests.append((check_in, check_out_date.strftime("%Y-%m-%d"), min_nights))
             print(f"📊 Mode MAX_DAYS: {len(tests)} dates sélectionnées")
         else:
-            # Nouvelle logique: X dates par mois pour Y mois
             tests = select_dates_per_month(availability, DATES_PER_MONTH, MONTHS_TO_CHECK)
             print(f"📊 Sélection: {len(tests)} dates ({DATES_PER_MONTH}/mois × {MONTHS_TO_CHECK} mois)")
         
@@ -445,7 +480,6 @@ def main():
                 print(f"   {i}. {ci} → {co} ({n} nuit(s))")
     
     else:
-        # Mode manuel
         check_in = date_input
         check_out = read_input("CHECKOUT", "Checkout (YYYY-MM-DD) : ")
         try:
@@ -477,14 +511,28 @@ def main():
                 check_in=checkin,
                 check_out=checkout,
                 proxy_url=PROXY_URL,
+                operation_hash=operation_hash,
             )
             
-            print(f"📦 Résultats: {len(listings)} listings")
+            print(f"   📦 Résultats: {len(listings)} listings")
+            
+            if not listings:
+                print(f"   ⚠️ Aucun listing retourné")
+                results.append({
+                    "date": checkin,
+                    "found": False,
+                    "total": 0,
+                })
+                continue
+            
+            # Afficher quelques IDs pour debug
+            if DEBUG and listings:
+                print(f"   🔍 Premiers IDs: {[l['id'] for l in listings[:5]]}")
             
             found, rank, page, pos = find_position(listings, room_id)
             
             if found:
-                print(f"✅ TROUVÉ ! Position #{rank} (Page {page}, rang {pos}/{RESULTS_PER_PAGE})")
+                print(f"   ✅ TROUVÉ ! Position #{rank} (Page {page}, rang {pos}/{RESULTS_PER_PAGE})")
                 results.append({
                     "date": checkin,
                     "found": True,
@@ -494,7 +542,7 @@ def main():
                     "total": len(listings),
                 })
             else:
-                print(f"❌ NON TROUVÉ dans {len(listings)} résultats")
+                print(f"   ❌ NON TROUVÉ dans {len(listings)} résultats")
                 results.append({
                     "date": checkin,
                     "found": False,
@@ -505,7 +553,9 @@ def main():
                 })
         
         except Exception as e:
-            print(f"❌ Erreur: {str(e)[:100]}")
+            print(f"   ❌ Erreur: {str(e)}")
+            import traceback
+            traceback.print_exc()
             results.append({
                 "date": checkin,
                 "found": False,
