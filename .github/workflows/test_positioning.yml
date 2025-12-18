@@ -1,4 +1,4 @@
-name: Test Positioning (corrigé)
+name: Test Positioning v2
 
 on:
   workflow_dispatch:
@@ -41,6 +41,11 @@ on:
         required: false
         type: string
         default: 'AED'
+      debug:
+        description: 'Mode debug (1 = oui, 0 = non)'
+        required: false
+        type: string
+        default: '1'
 
 permissions:
   contents: read
@@ -72,5 +77,6 @@ jobs:
           MONTHS_TO_CHECK: ${{ inputs.months_to_check }}
           RESULTS_PER_PAGE: ${{ inputs.results_per_page }}
           CURRENCY: ${{ inputs.currency }}
+          DEBUG: ${{ inputs.debug }}
         run: |
           python scrape_positioning_test.py
