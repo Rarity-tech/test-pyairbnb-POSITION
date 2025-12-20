@@ -1,82 +1,20 @@
-name: Test Positioning v2
+name: Test Positioning Simple
 
 on:
   workflow_dispatch:
-    inputs:
-      room_id:
-        description: 'RoomID (listing id)'
-        required: true
-        type: string
-      search_url:
-        description: 'URL de recherche Airbnb (avec place_id)'
-        required: true
-        type: string
-      date_input:
-        description: '0 = auto-calendrier, sinon YYYY-MM-DD'
-        required: true
-        type: string
-        default: '0'
-      checkout:
-        description: 'Checkout (YYYY-MM-DD) si date_input != 0'
-        required: false
-        type: string
-        default: ''
-      dates_per_month:
-        description: 'Nombre de dates à tester par mois'
-        required: false
-        type: number
-        default: 3
-      months_to_check:
-        description: 'Nombre de mois à vérifier'
-        required: false
-        type: number
-        default: 3
-      results_per_page:
-        description: 'Résultats par page (pour calcul page/position)'
-        required: false
-        type: number
-        default: 18
-      currency:
-        description: 'Devise (USD, AED, EUR...)'
-        required: false
-        type: string
-        default: 'AED'
-      debug:
-        description: 'Mode debug (1 = oui, 0 = non)'
-        required: false
-        type: string
-        default: '1'
-
-permissions:
-  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyairbnb==2.1.1 curl_cffi
-
-      - name: Run positioning test
-        env:
-          ROOM_ID: ${{ inputs.room_id }}
-          SEARCH_URL: ${{ inputs.search_url }}
-          DATE_INPUT: ${{ inputs.date_input }}
-          CHECKOUT: ${{ inputs.checkout }}
-          DATES_PER_MONTH: ${{ inputs.dates_per_month }}
-          MONTHS_TO_CHECK: ${{ inputs.months_to_check }}
-          RESULTS_PER_PAGE: ${{ inputs.results_per_page }}
-          CURRENCY: ${{ inputs.currency }}
-          DEBUG: ${{ inputs.debug }}
-        run: |
-          python scrape_positioning_test.py
+      
+      - name: Install
+        run: pip install pyairbnb==2.1.1 curl_cffi
+      
+      - name: Run
+        run: python scrape_positioning_test.py
