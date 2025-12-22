@@ -100,8 +100,11 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
     ]
     
     # Ajouter le nombre de voyageurs (adultes)
-    if adults and adults > 0:
-        raw_params.append({"filterName": "adults", "filterValues": [str(adults)]})
+    # Bloc voyageurs complet (Airbnb attend souvent l'ensemble)
+raw_params.append({"filterName": "adults", "filterValues": [str(adults)]})
+raw_params.append({"filterName": "children", "filterValues": ["0"]})
+raw_params.append({"filterName": "infants", "filterValues": ["0"]})
+raw_params.append({"filterName": "pets", "filterValues": ["0"]})
     
     input_data = {
         "operationName": "StaysSearch",
