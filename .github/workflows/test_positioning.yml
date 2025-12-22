@@ -1,7 +1,32 @@
-name: Test Positioning Simple
+name: Test Positionnement
 
 on:
   workflow_dispatch:
+    inputs:
+      room_id:
+        description: 'ID de votre listing Airbnb'
+        required: true
+        type: string
+      guests:
+        description: 'Nombre de voyageurs'
+        required: true
+        type: number
+        default: 2
+      max_nights:
+        description: 'Nombre max de nuits par réservation'
+        required: true
+        type: number
+        default: 3
+      dates_per_month:
+        description: 'Nombre de dates à tester par mois'
+        required: false
+        type: number
+        default: 5
+      months_to_check:
+        description: 'Nombre de mois à vérifier'
+        required: false
+        type: number
+        default: 2
 
 jobs:
   test:
@@ -13,8 +38,15 @@ jobs:
         with:
           python-version: "3.11"
       
-      - name: Install
+      - name: Install dependencies
         run: pip install pyairbnb==2.1.1 curl_cffi
       
-      - name: Run
+      - name: Run positioning test
+        env:
+          ROOM_ID: ${{ inputs.room_id }}
+          GUESTS: ${{ inputs.guests }}
+          MAX_NIGHTS: ${{ inputs.max_nights }}
+          DATES_PER_MONTH: ${{ inputs.dates_per_month }}
+          MONTHS_TO_CHECK: ${{ inputs.months_to_check }}
+          CURRENCY: "AED"
         run: python scrape_positioning_test.py
