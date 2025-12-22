@@ -68,6 +68,12 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
         "locale": "en",
         "currency": currency,
     }
+
+    # >>>>>>> MISE À JOUR UNIQUE ICI (AJOUT DU NOMBRE DE VOYAGEURS DANS L’URL)
+    if adults and adults > 0:
+        query_params["adults"] = str(adults)
+    # <<<<<<< FIN MISE À JOUR UNIQUE
+
     url = f"{base_url}?{urlencode(query_params)}"
 
     # Calculer nombre de nuits
@@ -99,11 +105,9 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
         {"filterName": "zoomLevel", "filterValues": [str(zoom)]},
     ]
 
-    # Bloc voyageurs complet (Airbnb attend souvent l'ensemble)
-    raw_params.append({"filterName": "adults", "filterValues": [str(adults)]})
-    raw_params.append({"filterName": "children", "filterValues": ["0"]})
-    raw_params.append({"filterName": "infants", "filterValues": ["0"]})
-    raw_params.append({"filterName": "pets", "filterValues": ["0"]})
+    # >>>>>>> MISE À JOUR UNIQUE ICI (SUPPRESSION DU adults DANS rawParams)
+    # (rien à faire ici : on ne met plus "adults" dans rawParams)
+    # <<<<<<< FIN MISE À JOUR UNIQUE
 
     input_data = {
         "operationName": "StaysSearch",
