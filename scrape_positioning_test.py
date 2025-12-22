@@ -237,7 +237,8 @@ def main():
         print("─" * 80)
         
         try:
-            # Recherche avec nombre de voyageurs
+            # Recherche
+            # Note: pyairbnb ne supporte pas le filtre par nombre de voyageurs
             results = pyairbnb.search_all(
                 check_in=check_in,
                 check_out=check_out,
@@ -250,7 +251,6 @@ def main():
                 price_max=0,
                 currency=CURRENCY,
                 proxy_url="",
-                adults=GUESTS,
             )
             
             print(f"📦 Résultats : {len(results)} listings")
