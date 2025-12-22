@@ -111,11 +111,11 @@ def select_dates(availability, dates_per_month, months_to_check, max_nights):
         month_key = (date_obj.year, date_obj.month)
         dates_by_month[month_key].append((date_str, info))
     
-    # Prochains mois
-    target_months = []
+    # Inclure le mois courant + les mois suivants
+    target_months = [(current_year, current_month)]  # Mois courant d'abord
     month = current_month
     year = current_year
-    for _ in range(months_to_check):
+    for _ in range(months_to_check - 1):  # -1 car on a déjà le mois courant
         month += 1
         if month > 12:
             month = 1
