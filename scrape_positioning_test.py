@@ -51,6 +51,9 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
     """
     Recherche personnalisée avec filtre par nombre de voyageurs.
     Basée sur pyairbnb.search mais avec le paramètre adults ajouté.
+
+    Changement important :
+    -> on envoie maintenant "adults" dans rawParams, comme le fait le site Airbnb.
     """
 
     # API Key
@@ -60,7 +63,8 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
     try:
         operation_id = pyairbnb.fetch_stays_search_hash("")
     except:
-        operation_id = '9f945886dcc032b9ef4ba770d9132eb0aa78053296b5405483944c229617b00b'
+        # Hash de secours si la récupération dynamique échoue
+        operation_id = "9f945886dcc032b9ef4ba770d9132eb0aa78053296b5405483944c229617b00b"
 
     base_url = f"https://www.airbnb.com/api/v3/StaysSearch/{operation_id}"
     query_params = {
@@ -69,10 +73,11 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
         "currency": currency,
     }
 
-    # >>>>>>> MISE À JOUR UNIQUE ICI (AJOUT DU NOMBRE DE VOYAGEURS DANS L’URL)
-    if adults and adults > 0:
-        query_params["adults"] = str(adults)
-    # <<<<<<< FIN MISE À JOUR UNIQUE
+    # >>>>>> MISE À JOUR: on NE met PLUS "adults" dans l'URL
+    # (Airbnb ne lit pas ce paramètre ici, il le lit dans rawParams)
+    # if adults and adults > 0:
+    #     query_params["adults"] = str(adults)
+    # <<<<<< FIN MISE À JOUR
 
     url = f"{base_url}?{urlencode(query_params)}"
 
@@ -82,7 +87,9 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
     nights = (check_out_date - check_in_date).days
 
     # Paramètres de recherche
+    # >>>>>> MISE À JOUR: ajout de "adults" dans rawParams (comme le site Airbnb)
     raw_params = [
+        {"filterName": "adults", "filterValues": [str(adults if adults and adults > 0 else 1)]},
         {"filterName": "cdnCacheSafe", "filterValues": ["false"]},
         {"filterName": "channel", "filterValues": ["EXPLORE"]},
         {"filterName": "checkin", "filterValues": [check_in]},
@@ -104,10 +111,7 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
         {"filterName": "version", "filterValues": ["1.8.3"]},
         {"filterName": "zoomLevel", "filterValues": [str(zoom)]},
     ]
-
-    # >>>>>>> MISE À JOUR UNIQUE ICI (SUPPRESSION DU adults DANS rawParams)
-    # (rien à faire ici : on ne met plus "adults" dans rawParams)
-    # <<<<<<< FIN MISE À JOUR UNIQUE
+    # <<<<<< FIN MISE À JOUR
 
     input_data = {
         "operationName": "StaysSearch",
@@ -147,7 +151,12 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
     headers = headers_global.copy()
     headers["X-Airbnb-Api-Key"] = api_key
 
-    response = curl_requests.post(url, json=input_data, headers=headers, impersonate="chrome124")
+    response = curl_requests.post(
+        url,
+        json=input_data,
+        headers=headers,
+        impersonate="chrome124",
+    )
 
     if response.status_code != 200:
         raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
@@ -159,12 +168,13 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
 
     # searchResults
     try:
-        search_results = (data
-                         .get("data", {})
-                         .get("presentation", {})
-                         .get("staysSearch", {})
-                         .get("results", {})
-                         .get("searchResults", []))
+        search_results = (
+            data.get("data", {})
+            .get("presentation", {})
+            .get("staysSearch", {})
+            .get("results", {})
+            .get("searchResults", [])
+        )
 
         for item in search_results:
             listing = item.get("listing", {})
@@ -177,27 +187,29 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
             price_amount = primary_line.get("price", "")
 
             # Extraire le montant numérique
-            import re
-            price_match = re.search(r'[\d,]+', str(price_amount))
+            price_match = re.search(r"[\d,]+", str(price_amount))
             price = float(price_match.group().replace(",", "")) if price_match else None
 
             if listing_id:
-                all_listings.append({
-                    "room_id": str(listing_id),
-                    "name": listing.get("name", ""),
-                    "price": {"unit": {"amount": price}} if price else None,
-                })
+                all_listings.append(
+                    {
+                        "room_id": str(listing_id),
+                        "name": listing.get("name", ""),
+                        "price": {"unit": {"amount": price}} if price else None,
+                    }
+                )
     except Exception as e:
         print(f"      ⚠️ Erreur extraction searchResults: {e}")
 
     # Aussi récupérer depuis mapResults si disponible
     try:
-        map_results = (data
-                      .get("data", {})
-                      .get("presentation", {})
-                      .get("staysSearch", {})
-                      .get("results", {})
-                      .get("mapSearchResults", []))
+        map_results = (
+            data.get("data", {})
+            .get("presentation", {})
+            .get("staysSearch", {})
+            .get("results", {})
+            .get("mapSearchResults", [])
+        )
 
         existing_ids = {l["room_id"] for l in all_listings}
 
@@ -208,11 +220,13 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
                 listing_id = listing_id.replace("StayListing:", "")
 
             if listing_id and str(listing_id) not in existing_ids:
-                all_listings.append({
-                    "room_id": str(listing_id),
-                    "name": listing.get("name", ""),
-                    "price": None,
-                })
+                all_listings.append(
+                    {
+                        "room_id": str(listing_id),
+                        "name": listing.get("name", ""),
+                        "price": None,
+                    }
+                )
     except:
         pass
 
@@ -340,7 +354,7 @@ def extract_price(price_data):
 def calculate_page_ranges(results):
     pages = []
     for i in range(0, len(results), RESULTS_PER_PAGE):
-        page_listings = results[i:i + RESULTS_PER_PAGE]
+        page_listings = results[i : i + RESULTS_PER_PAGE]
         prices = []
         for item in page_listings:
             price = extract_price(item.get("price"))
@@ -348,12 +362,14 @@ def calculate_page_ranges(results):
                 prices.append(price)
         if prices:
             page_num = (i // RESULTS_PER_PAGE) + 1
-            pages.append({
-                "page": page_num,
-                "min": min(prices),
-                "max": max(prices),
-                "count": len(prices),
-            })
+            pages.append(
+                {
+                    "page": page_num,
+                    "min": min(prices),
+                    "max": max(prices),
+                    "count": len(prices),
+                }
+            )
     return pages
 
 
@@ -461,30 +477,37 @@ def main():
             print(f"\n📊 Fourchettes de prix par page :")
             for pr in page_ranges:
                 marker = " ← MON LISTING" if found and pr["page"] == my_page else ""
-                print(f"   Page {pr['page']:2d} : {pr['min']:,.0f} - {pr['max']:,.0f} {CURRENCY} ({pr['count']} prix){marker}")
+                print(
+                    f"   Page {pr['page']:2d} : {pr['min']:,.0f} - {pr['max']:,.0f} {CURRENCY} ({pr['count']} prix){marker}"
+                )
 
             # Stocker résultat
-            all_results.append({
-                "date": check_in,
-                "nights": nights,
-                "found": found,
-                "position": my_position,
-                "page": my_page if found else None,
-                "price": my_price,
-                "total": len(results),
-                "page_ranges": page_ranges,
-            })
+            all_results.append(
+                {
+                    "date": check_in,
+                    "nights": nights,
+                    "found": found,
+                    "position": my_position,
+                    "page": my_page if found else None,
+                    "price": my_price,
+                    "total": len(results),
+                    "page_ranges": page_ranges,
+                }
+            )
 
         except Exception as e:
             print(f"❌ Erreur : {e}")
             import traceback
+
             traceback.print_exc()
-            all_results.append({
-                "date": check_in,
-                "nights": nights,
-                "found": False,
-                "error": str(e),
-            })
+            all_results.append(
+                {
+                    "date": check_in,
+                    "nights": nights,
+                    "found": False,
+                    "error": str(e),
+                }
+            )
 
         time.sleep(DELAY)
 
@@ -524,9 +547,13 @@ def main():
             page_min = f"{page_range['min']:,.0f}" if page_range else "N/A"
             page_max = f"{page_range['max']:,.0f}" if page_range else "N/A"
             my_price = f"{r['price']:,.0f}" if r.get("price") else "N/A"
-            print(f"{r['date']:<12} {nights:>6} {r['position']:>6} {page:>6} {my_price:>12} {page_min:>12} {page_max:>12}")
+            print(
+                f"{r['date']:<12} {nights:>6} {r['position']:>6} {page:>6} {my_price:>12} {page_min:>12} {page_max:>12}"
+            )
         else:
-            print(f"{r['date']:<12} {nights:>6} {'N/A':>6} {'N/A':>6} {'N/A':>12} {'N/A':>12} {'N/A':>12}")
+            print(
+                f"{r['date']:<12} {nights:>6} {'N/A':>6} {'N/A':>6} {'N/A':>12} {'N/A':>12} {'N/A':>12}"
+            )
 
     print("\n" + "=" * 80)
     print("🎉 FIN")
