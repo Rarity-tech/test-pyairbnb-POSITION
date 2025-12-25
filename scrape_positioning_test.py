@@ -46,7 +46,7 @@ AIRBNB_API_KEY = "d306zoyjsyarp7ifhu67rjxn52tv0t20"
 def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adults, currency="AED"):
     """
     Recherche Airbnb COMPLÈTEMENT indépendante de pyairbnb.
-    Appelle directement l'API Airbnb v2/explore_tabs comme le font les navigateurs.
+    Appelle directement l'API Airbnb v2/explore_tabs avec PAGINATION complète.
     """
     
     # Endpoint historique qui fonctionne sans GraphQL complexe
@@ -57,8 +57,8 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
     check_out_date = datetime.strptime(check_out, "%Y-%m-%d")
     nights = (check_out_date - check_in_date).days
     
-    # Paramètres complets (basés sur vraie requête Airbnb)
-    params = {
+    # Paramètres de base
+    base_params = {
         # PARAMÈTRES CRITIQUES
         "adults": str(adults),
         "children": "0",
@@ -110,67 +110,123 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
     
     print(f"      🔗 API Call: adults={adults}, checkin={check_in}, checkout={check_out}")
     
+    all_listings = []
+    pagination_cursor = None
+    page_count = 0
+    max_pages = 16  # ~280 listings = 15-16 pages
+    
     try:
-        response = curl_requests.get(
-            url,
-            params=params,
-            headers=headers,
-            impersonate="chrome120",
-            timeout=30
-        )
-        
-        print(f"      📡 Status: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"      ⚠️  Response: {response.text[:500]}")
-            return []
-        
-        data = response.json()
-        
-        # Extraction des listings depuis explore_tabs
-        all_listings = []
-        
-        # Structure explore_tabs
-        explore_tabs = data.get("explore_tabs", [])
-        
-        for tab in explore_tabs:
-            sections = tab.get("sections", [])
-            for section in sections:
-                listings = section.get("listings", [])
+        # Boucle de pagination
+        while page_count < max_pages:
+            page_count += 1
+            
+            # Préparer les paramètres avec cursor si présent
+            params = base_params.copy()
+            if pagination_cursor:
+                params["items_offset"] = str(len(all_listings))
+                params["section_offset"] = "0"
+                # Certaines implémentations utilisent 'cursor'
+                params["cursor"] = pagination_cursor
+            
+            # Requête API
+            response = curl_requests.get(
+                url,
+                params=params,
+                headers=headers,
+                impersonate="chrome120",
+                timeout=30
+            )
+            
+            if page_count == 1:
+                print(f"      📡 Status: {response.status_code}")
+            
+            if response.status_code != 200:
+                if page_count == 1:
+                    print(f"      ⚠️  Response: {response.text[:500]}")
+                break
+            
+            data = response.json()
+            
+            # Extraction des listings depuis explore_tabs
+            page_listings = []
+            pagination_metadata = None
+            
+            # Structure explore_tabs
+            explore_tabs = data.get("explore_tabs", [])
+            
+            for tab in explore_tabs:
+                # Récupérer metadata de pagination
+                if not pagination_metadata:
+                    pagination_metadata = tab.get("pagination_metadata", {})
                 
-                for listing in listings:
-                    listing_data = listing.get("listing", {})
-                    pricing = listing.get("pricing_quote", {})
+                sections = tab.get("sections", [])
+                for section in sections:
+                    listings = section.get("listings", [])
                     
-                    room_id = listing_data.get("id")
-                    if not room_id:
-                        continue
-                    
-                    # Extraire prix
-                    price = None
-                    if pricing:
-                        rate = pricing.get("rate", {})
-                        amount = rate.get("amount")
-                        if amount:
-                            try:
-                                price = float(amount)
-                            except:
-                                pass
-                    
-                    all_listings.append({
-                        "room_id": str(room_id),
-                        "name": listing_data.get("name", ""),
-                        "price": price,
-                    })
+                    for listing in listings:
+                        listing_data = listing.get("listing", {})
+                        pricing = listing.get("pricing_quote", {})
+                        
+                        room_id = listing_data.get("id")
+                        if not room_id:
+                            continue
+                        
+                        # Éviter les doublons
+                        if any(l["room_id"] == str(room_id) for l in all_listings):
+                            continue
+                        
+                        # Extraire prix
+                        price = None
+                        if pricing:
+                            rate = pricing.get("rate", {})
+                            amount = rate.get("amount")
+                            if amount:
+                                try:
+                                    price = float(amount)
+                                except:
+                                    pass
+                        
+                        page_listings.append({
+                            "room_id": str(room_id),
+                            "name": listing_data.get("name", ""),
+                            "price": price,
+                        })
+            
+            # Ajouter les résultats de cette page
+            all_listings.extend(page_listings)
+            
+            if page_count == 1:
+                print(f"      📄 Page {page_count}: {len(page_listings)} listings")
+            else:
+                print(f"      📄 Page {page_count}: +{len(page_listings)} listings (total: {len(all_listings)})")
+            
+            # Vérifier s'il y a une page suivante
+            if not page_listings:
+                # Aucun résultat sur cette page = fin
+                break
+            
+            # Chercher le cursor pour la page suivante
+            has_next_page = pagination_metadata.get("has_next_page", False) if pagination_metadata else False
+            next_cursor = pagination_metadata.get("cursor", "") if pagination_metadata else ""
+            
+            if not has_next_page or not next_cursor:
+                # Pas de page suivante
+                break
+            
+            pagination_cursor = next_cursor
+            
+            # Petit délai entre les pages pour éviter rate limiting
+            if page_count < max_pages:
+                time.sleep(0.5)
         
-        print(f"      ✅ Extracted {len(all_listings)} listings")
+        print(f"      ✅ Total extracted: {len(all_listings)} listings from {page_count} page(s)")
         return all_listings
         
     except Exception as e:
         print(f"      ❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        return []
+        return all_listings  # Retourner ce qu'on a récupéré jusqu'ici
 
 
 # ==============================================================================
