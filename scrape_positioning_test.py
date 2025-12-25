@@ -147,6 +147,18 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
             
             data = response.json()
             
+            # DEBUG: Sauvegarder la réponse complète pour la première page
+            if page_count == 1:
+                try:
+                    with open(f"/tmp/airbnb_response_debug.json", "w") as f:
+                        json.dump(data, f, indent=2)
+                    print(f"      🔍 DEBUG: Response saved to /tmp/airbnb_response_debug.json")
+                    
+                    # Afficher les clés principales
+                    print(f"      🔍 DEBUG: Main keys in response: {list(data.keys())}")
+                except:
+                    pass
+            
             # Extraction des listings depuis explore_tabs
             page_listings = []
             pagination_metadata = None
@@ -197,6 +209,8 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
             
             if page_count == 1:
                 print(f"      📄 Page {page_count}: {len(page_listings)} listings")
+                # DEBUG pagination
+                print(f"      🔍 DEBUG: pagination_metadata = {pagination_metadata}")
             else:
                 print(f"      📄 Page {page_count}: +{len(page_listings)} listings (total: {len(all_listings)})")
             
