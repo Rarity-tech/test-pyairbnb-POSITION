@@ -108,8 +108,6 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
         "X-Airbnb-API-Key": AIRBNB_API_KEY,
     }
     
-    print(f"      🔗 API Call: adults={adults}, checkin={check_in}, checkout={check_out}")
-    
     all_listings = []
     items_offset = 0
     section_offset = 0
@@ -136,27 +134,11 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
                 timeout=30
             )
             
-            if page_count == 1:
-                print(f"      📡 Status: {response.status_code}")
-            
             if response.status_code != 200:
-                if page_count == 1:
-                    print(f"      ⚠️  Response: {response.text[:500]}")
+                print(f"      ⚠️  HTTP {response.status_code}: {response.text[:500]}")
                 break
             
             data = response.json()
-            
-            # DEBUG: Sauvegarder la réponse complète pour la première page
-            if page_count == 1:
-                try:
-                    with open(f"/tmp/airbnb_response_debug.json", "w") as f:
-                        json.dump(data, f, indent=2)
-                    print(f"      🔍 DEBUG: Response saved to /tmp/airbnb_response_debug.json")
-                    
-                    # Afficher les clés principales
-                    print(f"      🔍 DEBUG: Main keys in response: {list(data.keys())}")
-                except:
-                    pass
             
             # Extraction des listings depuis explore_tabs
             page_listings = []
@@ -208,8 +190,6 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
             
             if page_count == 1:
                 print(f"      📄 Page {page_count}: {len(page_listings)} listings")
-                # DEBUG pagination
-                print(f"      🔍 DEBUG: pagination_metadata = {pagination_metadata}")
             else:
                 print(f"      📄 Page {page_count}: +{len(page_listings)} listings (total: {len(all_listings)})")
             
@@ -233,7 +213,7 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
             if page_count < max_pages:
                 time.sleep(0.5)
         
-        print(f"      ✅ Total extracted: {len(all_listings)} listings from {page_count} page(s)")
+        print(f"      ✅ Total: {len(all_listings)} listings ({page_count} page{'s' if page_count > 1 else ''})")
         return all_listings
         
     except Exception as e:
@@ -364,7 +344,7 @@ def main():
         return
 
     print("=" * 80)
-    print("🚀 TRACKING POSITION AIRBNB - VERSION INDÉPENDANTE")
+    print("🚀 TRACKING POSITION AIRBNB")
     print("=" * 80)
     print(f"📍 Room ID : {ROOM_ID}")
     print(f"👥 Voyageurs : {GUESTS}")
@@ -396,7 +376,7 @@ def main():
 
     # Exécution
     print("\n" + "=" * 80)
-    print("🔎 RECHERCHES (API v2/explore_tabs)")
+    print("🔎 RECHERCHES")
     print("=" * 80)
 
     all_results = []
