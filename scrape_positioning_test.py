@@ -51,9 +51,6 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
     """
     Recherche personnalisée avec filtre par nombre de voyageurs.
     Basée sur pyairbnb.search mais avec le paramètre adults ajouté.
-
-    Changement important :
-    -> on envoie maintenant "adults" dans rawParams, comme le fait le site Airbnb.
     """
 
     # API Key
@@ -73,11 +70,9 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
         "currency": currency,
     }
 
-    # >>>>>> MISE À JOUR: on NE met PLUS "adults" dans l'URL
-    # (Airbnb ne lit pas ce paramètre ici, il le lit dans rawParams)
-    # if adults and adults > 0:
-    #     query_params["adults"] = str(adults)
-    # <<<<<< FIN MISE À JOUR
+    # Ajouter adults dans les query params pour assurer compatibilité
+    if adults and adults > 0:
+        query_params["adults"] = str(adults)
 
     url = f"{base_url}?{urlencode(query_params)}"
 
@@ -86,10 +81,10 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
     check_out_date = datetime.strptime(check_out, "%Y-%m-%d")
     nights = (check_out_date - check_in_date).days
 
-    # Paramètres de recherche
-    # >>>>>> MISE À JOUR: ajout de "adults" dans rawParams (comme le site Airbnb)
+    # Paramètres de recherche avec adults et guests
     raw_params = [
-        {"filterName": "adults", "filterValues": [str(adults if adults and adults > 0 else 1)]},
+        {"filterName": "adults", "filterValues": [str(adults)]},
+        {"filterName": "guests", "filterValues": [str(adults)]},
         {"filterName": "cdnCacheSafe", "filterValues": ["false"]},
         {"filterName": "channel", "filterValues": ["EXPLORE"]},
         {"filterName": "checkin", "filterValues": [check_in]},
@@ -111,7 +106,6 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
         {"filterName": "version", "filterValues": ["1.8.3"]},
         {"filterName": "zoomLevel", "filterValues": [str(zoom)]},
     ]
-    # <<<<<< FIN MISE À JOUR
 
     input_data = {
         "operationName": "StaysSearch",
