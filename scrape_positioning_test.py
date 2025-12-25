@@ -111,7 +111,8 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
     print(f"      🔗 API Call: adults={adults}, checkin={check_in}, checkout={check_out}")
     
     all_listings = []
-    pagination_cursor = None
+    items_offset = 0
+    section_offset = 0
     page_count = 0
     max_pages = 16  # ~280 listings = 15-16 pages
     
@@ -120,13 +121,11 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
         while page_count < max_pages:
             page_count += 1
             
-            # Préparer les paramètres avec cursor si présent
+            # Préparer les paramètres avec offset
             params = base_params.copy()
-            if pagination_cursor:
-                params["items_offset"] = str(len(all_listings))
-                params["section_offset"] = "0"
-                # Certaines implémentations utilisent 'cursor'
-                params["cursor"] = pagination_cursor
+            if page_count > 1:
+                params["items_offset"] = str(items_offset)
+                params["section_offset"] = str(section_offset)
             
             # Requête API
             response = curl_requests.get(
@@ -219,15 +218,16 @@ def independent_search(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, adul
                 # Aucun résultat sur cette page = fin
                 break
             
-            # Chercher le cursor pour la page suivante
+            # Vérifier s'il y a une page suivante
             has_next_page = pagination_metadata.get("has_next_page", False) if pagination_metadata else False
-            next_cursor = pagination_metadata.get("cursor", "") if pagination_metadata else ""
             
-            if not has_next_page or not next_cursor:
+            if not has_next_page:
                 # Pas de page suivante
                 break
             
-            pagination_cursor = next_cursor
+            # Mettre à jour les offsets pour la page suivante
+            items_offset = pagination_metadata.get("items_offset", 0) if pagination_metadata else 0
+            section_offset = pagination_metadata.get("section_offset", 0) if pagination_metadata else 0
             
             # Petit délai entre les pages pour éviter rate limiting
             if page_count < max_pages:
