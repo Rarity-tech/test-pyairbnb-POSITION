@@ -70,10 +70,6 @@ def search_with_guests(check_in, check_out, ne_lat, ne_lng, sw_lat, sw_lng, zoom
         "currency": currency,
     }
 
-    # Ajouter adults dans les query params pour assurer compatibilité
-    if adults and adults > 0:
-        query_params["adults"] = str(adults)
-
     url = f"{base_url}?{urlencode(query_params)}"
 
     # Calculer nombre de nuits
